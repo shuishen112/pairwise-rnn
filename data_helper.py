@@ -65,7 +65,7 @@ def get_alphabet(corpuses):
                 tokens = cut(sentence)
                 for token in set(tokens):
                     alphabet.add(token)
-        print len(alphabet.keys()) 
+        print( len(alphabet.keys()) )
     return alphabet
 def getSubVectorsFromDict(vectors,vocab,dim = 300):
     embedding = np.zeros((len(vocab),dim))
@@ -76,7 +76,7 @@ def getSubVectorsFromDict(vectors,vocab,dim = 300):
             embedding[vocab[word]]= vectors[word]
         else:
             embedding[vocab[word]]= np.random.uniform(-0.5,+0.5,dim)#vectors['[UNKNOW]'] #.tolist()
-    print 'word in embedding',count
+    print( 'word in embedding',count)
     return embedding
 def encode_to_split(sentence,alphabet):
     indices = []    
@@ -85,23 +85,23 @@ def encode_to_split(sentence,alphabet):
     return seq
 def load_text_vec(alphabet,filename="",embedding_size = 100):
     vectors = {}
-    with open(filename) as f:
+    with open(filename,encoding='utf-8') as f:
         i = 0
         for line in f:
             i += 1
             if i % 100000 == 0:
-                print 'epch %d' % i
+                print( 'epch %d' % i)
             items = line.strip().split(' ')
             if len(items) == 2:
                 vocab_size, embedding_size= items[0],items[1]
-                print ( vocab_size, embedding_size)
+                print( ( vocab_size, embedding_size))
             else:
                 word = items[0]
                 if word in alphabet:
                     vectors[word] = items[1:]
-    print 'embedding_size',embedding_size
-    print 'done'
-    print 'words found in wor2vec embedding ',len(vectors.keys())
+    print( 'embedding_size',embedding_size)
+    print( 'done')
+    print( 'words found in wor2vec embedding ',len(vectors.keys()))
     return vectors
 def get_embedding(alphabet,dim = 300):
     fname = 'embedding/glove.6B/glove.6B.300d.txt'
@@ -140,9 +140,12 @@ def get_mini_batch(df,alphabet,batch_size,sort_by_len = True,shuffle = False):
     a = []
     neg_a = []
     for question in df['question'].unique():
+#        group = df[df["question"]==question]
+#        pos_answers = group[df["flag"] == 1]["answer"]
+#        neg_answers = group[df["flag"] == 0]["answer"].reset_index()
         group = df[df["question"]==question]
-        pos_answers = group[df["flag"] == 1]["answer"]
-        neg_answers = group[df["flag"] == 0]["answer"].reset_index()
+        pos_answers = group[group["flag"] == 1]["answer"]
+        neg_answers = group[group["flag"] == 0]["answer"].reset_index()
 
         for pos in pos_answers:
             if len(neg_answers.index) > 0:
@@ -195,7 +198,7 @@ def prepare_data(seqs):
     for idx, seq in enumerate(seqs):
         x[idx, :lengths[idx]] = seq
         x_mask[idx, :lengths[idx]] = 1.0
-    # print x, x_mask
+    # print( x, x_mask)
     return x, x_mask
 
 

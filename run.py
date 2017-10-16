@@ -1,40 +1,92 @@
 from tensorflow import flags
-from main import main as m
 import tensorflow as tf
-# Model Hyperparameters
-flags.DEFINE_integer("embedding_dim",300, "Dimensionality of character embedding (default: 128)")
-flags.DEFINE_string("filter_sizes", "1,2,3,5", "Comma-separated filter sizes (default: '3,4,5')")
-flags.DEFINE_integer("num_filters", 64, "Number of filters per filter size (default: 128)")
-flags.DEFINE_float("dropout_keep_prob", 1, "Dropout keep probability (default: 0.5)")
-flags.DEFINE_float("l2_reg_lambda", 0.000001, "L2 regularizaion lambda (default: 0.0)")
-flags.DEFINE_float("learning_rate", 1e-3, "learn rate( default: 0.0)")
-flags.DEFINE_integer("max_len_left", 40, "max document length of left input")
-flags.DEFINE_integer("max_len_right", 40, "max document length of right input")
-flags.DEFINE_string("loss","pair_wise","loss function (default:point_wise)")
-flags.DEFINE_integer("hidden_size",100,"the default hidden size")
-
-# Training parameters
-flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
-flags.DEFINE_boolean("trainable", False, "is embedding trainable? (default: False)")
-flags.DEFINE_integer("num_epoches", 100, "Number of training epochs (default: 200)")
-flags.DEFINE_integer("evaluate_every", 500, "Evaluate model on dev set after this many steps (default: 100)")
-flags.DEFINE_integer("checkpoint_every", 500, "Save model after this many steps (default: 100)")
-
-flags.DEFINE_string('data','wiki','data set')
-flags.DEFINE_string('pooling','mean','max pooling or attentive pooling')
-flags.DEFINE_boolean('clean',True,'whether we clean the data')
-flags.DEFINE_string('conv','wide','wide conv or narrow')
-flags.DEFINE_integer('gpu',0,'gpu number')
-# Misc Parameters
-flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
-flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
-
-#data_help parameters
+from config import Singleton
+import data_helper
+import time
+import datetime
+import os
+import models
+import numpy as np
+import evaluation
+import sys
+import logging
 
 
-def test():
-	args = flags.FLAGS
-	m(args)
+now = int(time.time()) 
+timeArray = time.localtime(now)
+timeStamp = time.strftime("%Y%m%d%H%M%S", timeArray)
+log_filename = "log/" +time.strftime("%Y%m%d", timeArray)
 
-if __name__ == '__main__':
-	test()
+program = os.path.basename(sys.argv[0])
+logger = logging.getLogger(program) 
+if not os.path.exists(log_filename):
+    os.path.mkdir(log_filename)
+logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s',datefmt='%a, %d %b %Y %H:%M:%S',filename=log_filename+'/qa.log',filemode='w')
+logging.root.setLevel(level=logging.INFO)
+logger.info("running %s" % ' '.join(sys.argv))
+    
+
+
+
+args = Singleton().get_rnn_flag()
+args._parse_flags()
+opts=dict()
+logger.info("\nParameters:")
+for attr, value in sorted(args.__flags.items()):
+    logger.info(("{}={}".format(attr.upper(), value)))
+    opts[attr]=value
+
+
+
+logger.info('load data ...........')
+train,test,dev = data_helper.load(args.data,filter = args.clean)
+
+q_max_sent_length = max(map(lambda x:len(x),train['question'].str.split()))
+a_max_sent_length = max(map(lambda x:len(x),train['answer'].str.split()))
+
+alphabet = data_helper.get_alphabet([train,test,dev])
+logger.info('the number of words :%d '%len(alphabet))
+
+
+embedding = data_helper.get_embedding(alphabet)
+
+opts["embeddings"] =embedding
+opts["vocab_size"]=len(alphabet)
+opts["max_input_right"]=a_max_sent_length
+opts["max_input_left"]=q_max_sent_length
+opts["filter_sizes"]=list(map(int, args.filter_sizes.split(",")))
+
+
+with tf.Graph().as_default(), tf.device("/gpu:" + str(args.gpu)):
+    # with tf.device("/cpu:0"):
+    session_conf = tf.ConfigProto()
+    session_conf.allow_soft_placement = args.allow_soft_placement
+    session_conf.log_device_placement = args.log_device_placement
+    session_conf.gpu_options.allow_growth = True
+    sess = tf.Session(config=session_conf)
+    model=models.setup(opts)
+    model.build_graph()    
+    sess.run(tf.global_variables_initializer())
+ 
+    def predict(model,sess,batch,test):
+        scores = []
+        for data in batch:            
+            score = model.predict(sess,data)
+            scores.extend(score)  
+        return np.array(scores[:len(test)])
+
+    for i in range(args.num_epoches):  
+        
+        for data in data_helper.get_mini_batch(train,alphabet,args.batch_size):
+            _, summary, step, loss, accuracy,score12, score13, see = model.train(sess,data)
+            time_str = datetime.datetime.now().isoformat()
+#            print("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
+            logger.info("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
+
+        test_datas = data_helper.get_mini_batch_test(test,alphabet,args.batch_size)
+
+        predicted_test = predict(model,sess,test_datas,test)
+        map_mrr_test = evaluation.evaluationBypandas(test,predicted_test)
+
+        logger.info('map_mrr test' +str(map_mrr_test))
+        print('map_mrr test' +str(map_mrr_test))
