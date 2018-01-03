@@ -2,60 +2,48 @@
 import tensorflow as tf
 import numpy as np
 from tensorflow.contrib import rnn
-import models.blocks as blocks
+
 # model_type :apn or qacnn
 class QA_RNN_extend(object):
-#    def __init__(self,max_input_left,max_input_right,batch_size,vocab_size,embedding_size,filter_sizes,num_filters,hidden_size,
-#        dropout_keep_prob = 1,learning_rate = 0.001,embeddings = None,l2_reg_lambda = 0.0,trainable = True,pooling = 'attentive',conv = 'narrow'):
-#
-#        """
-#            QA_RNN model for question answering
-#
-#            Args:
-#                self.dropout_keep_prob: dropout rate
-#                self.num_filters : number of filters
-#                self.para : parameter list
-#                self.extend_feature_dim : my extend feature dimension
-#                self.max_input_left : the length of question
-#                self.max_input_right : the length of answer
-#                self.pooling : pooling strategy :max pooling or attentive pooling
-#                
-#        """
-#        self.dropout_keep_prob =  tf.placeholder(tf.float32,name = 'dropout_keep_prob')
-#        self.num_filters = num_filters
-#        self.embeddings = embeddings
-#        self.embedding_size = embedding_size
-#        self.batch_size = batch_size
-#        self.filter_sizes = filter_sizes
-#        self.l2_reg_lambda = l2_reg_lambda
-#        self.para = []
-#
-#        self.max_input_left = max_input_left
-#        self.max_input_right = max_input_right
-#        self.trainable = trainable
-#        self.vocab_size = vocab_size
-#        self.pooling = pooling
-#
-#        self.conv = conv
-#        self.attention = 'position_attention'
-#        self.learning_rate = learning_rate
-#
-#        self.hidden_size = hidden_size
-#        self.position_embedding_dim = 10
-    def __init__(self,opt):
-        for key,value in opt.items():
-            self.__setattr__(key,value)
-#            print("%s:%s" %(key,value))
+    def __init__(self,max_input_left,max_input_right,batch_size,vocab_size,embedding_size,filter_sizes,num_filters,hidden_size,
+        dropout_keep_prob = 1,learning_rate = 0.001,embeddings = None,l2_reg_lambda = 0.0,trainable = True,pooling = 'attentive',conv = 'narrow'):
 
-        self.position_embedding_dim = 10
-        self.attention = 'position_attention'
-        self.total_num_filter = len(self.filter_sizes) * self.num_filters
+        """
+            QA_RNN model for question answering
+
+            Args:
+                self.dropout_keep_prob: dropout rate
+                self.num_filters : number of filters
+                self.para : parameter list
+                self.extend_feature_dim : my extend feature dimension
+                self.max_input_left : the length of question
+                self.max_input_right : the length of answer
+                self.pooling : pooling strategy :max pooling or attentive pooling
+                
+        """
+        self.dropout_keep_prob = dropout_keep_prob
+        self.num_filters = num_filters
+        self.embeddings = embeddings
+        self.embedding_size = embedding_size
+        self.batch_size = batch_size
+        self.filter_sizes = filter_sizes
+        self.l2_reg_lambda = l2_reg_lambda
         self.para = []
-        
-        self.dropout_keep_prob_holder =  tf.placeholder(tf.float32,name = 'dropout_keep_prob')
-        print("build over")
+
+        self.max_input_left = max_input_left
+        self.max_input_right = max_input_right
+        self.trainable = trainable
+        self.vocab_size = vocab_size
+        self.pooling = pooling
+
+        self.conv = conv
+        self.attention = 'mean'
+        self.learning_rate = learning_rate
+
+        self.hidden_size = hidden_size
+        self.position_embedding_dim = 10
     def create_placeholder(self):
-        print(('Create placeholders'))
+        print('Create placeholders')
         # he length of the sentence is varied according to the batch,so the None,None
         self.question = tf.placeholder(tf.int32,[None,None],name = 'input_question')
         self.max_input_left = tf.shape(self.question)[1]
@@ -64,31 +52,23 @@ class QA_RNN_extend(object):
         self.answer = tf.placeholder(tf.int32,[None,None],name = 'input_answer')
         self.max_input_right = tf.shape(self.answer)[1]
         self.answer_negative = tf.placeholder(tf.int32,[None,None],name = 'input_right')
-        self.pos_position = tf.placeholder(tf.int32,[None,None],name = 'pos_position')
-        self.neg_position = tf.placeholder(tf.int32,[None,None],name = 'neg_position')
-        self.q_len,self.q_mask = blocks.length(self.question)
-        self.a_len,self.a_mask = blocks.length(self.answer)
-        self.a_neg_len,self.a_neg_mask = blocks.length(self.answer_negative)
-        # self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
-        # self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
-        # self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
-        # #real length
-        # self.q_len = tf.reduce_sum(tf.cast(self.q_mask,'int32'),1)
-        # self.a_len = tf.reduce_sum(tf.cast(self.a_mask,'int32'),1)
-        # self.a_neg_len = tf.reduce_sum(tf.cast(self.a_neg_mask,'int32'),1)
+        self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
+        self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
+        self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
+        #real length
+        self.q_len = tf.reduce_sum(tf.cast(self.q_mask,'int32'),1)
+        self.a_len = tf.reduce_sum(tf.cast(self.a_mask,'int32'),1)
+        self.a_neg_len = tf.reduce_sum(tf.cast(self.a_neg_mask,'int32'),1)
     def create_position(self):
-        self.a_max_len = tf.shape(self.answer)[1]
-        self.a_neg_max_len = tf.shape(self.answer_negative)[1]
-        self.a_position = tf.tile(tf.reshape(tf.range(self.a_max_len),[1,self.a_max_len]),[self.batch_size,1])
-        self.a_neg_position = tf.tile(tf.reshape(tf.range(self.a_neg_max_len),[1,self.a_neg_max_len]),[self.batch_size,1])
+        self.a_position = tf.tile(tf.reshape(tf.range(self.max_input_right),[1,self.max_input_right]),[self.batch_size,1])
     def add_embeddings(self):
-        print( 'add embeddings')
+        print 'add embeddings'
         if self.embeddings is not None:
-            print( "load embedding")
+            print "load embedding"
             W = tf.Variable(np.array(self.embeddings),name = "W" ,dtype="float32",trainable = self.trainable)
             
         else:
-            print( "random embedding")
+            print "random embedding"
             W = tf.Variable(tf.random_uniform([self.vocab_size, self.embedding_size], -1.0, 1.0),name="W",trainable = self.trainable)
         self.embedding_W = W
         self.position_embedding = tf.Variable(tf.random_uniform([300,self.position_embedding_dim],-1.0,1.0),name = 'W')
@@ -100,31 +80,29 @@ class QA_RNN_extend(object):
         self.a_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer)
         self.a_neg_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer_negative)
         
-        self.a_p = tf.nn.embedding_lookup(self.position_embedding ,self.pos_position)
-        self.a_neg_p = tf.nn.embedding_lookup(self.position_embedding,self.neg_position)
+        self.a_p = tf.nn.embedding_lookup(self.position_embedding ,self.a_position)
     def rnn_model_sentence(self):
         fw_cell,bw_cell = self.lstm_cell('rnn')
         self.para_initial()
         if self.attention == 'iarnn_word':
-            print(self.attention)
+            print self.attention
             self.rnn_att_inner(fw_cell,bw_cell)
         elif self.attention == 'position_attention':
             self.rnn_position_attention(fw_cell,bw_cell)
         else:
             self.rnn_att_tra(fw_cell,bw_cell)
             
-        # print( self.q_pos_rnn)
+        # print self.q_pos_rnn
         # self.a_pos_rnn = self.lstm_model(self.a_pos_embedding)
         # self.a_neg_rnn = self.lstm_model(self.a_neg_embedding)
     def rnn_position_attention(self,fw_cell,bw_cell):
         self.q_rnn = self.lstm_model(fw_cell,bw_cell,self.q_embedding,self.q_len)
         self.a_pos_rnn = self.lstm_model(fw_cell,bw_cell,self.a_embedding,self.a_len)
         self.a_neg_rnn = self.lstm_model(fw_cell,bw_cell,self.a_neg_embedding,self.a_neg_len)
-       
-        self.q_pos_rnn,self.a_pos_rnn = self.position_attention(self.q_rnn,self.a_pos_rnn,self.a_p,self.a_max_len,self.q_mask,self.a_mask)
-        self.q_neg_rnn,self.a_neg_rnn = self.position_attention(self.q_rnn,self.a_neg_rnn,self.a_neg_p,self.a_neg_max_len,self.q_mask,self.a_neg_mask)
+        self.q_pos_rnn,self.a_pos_rnn = self.position_attention(self.q_rnn,self.a_pos_rnn,self.a_p,self.q_mask,self.a_mask)
+        self.q_neg_rnn,self.a_neg_rnn = self.position_attention(self.q_rnn,self.a_neg_rnn,self.a_p,self.q_mask,self.a_neg_mask)
     def para_initial(self):
-        # print(("---------"))
+        # print("---------")
         self.W_qp = tf.Variable(tf.truncated_normal(shape = [self.hidden_size * 2,1],stddev = 0.01,name = 'W_qp'))
         self.U = tf.Variable(tf.truncated_normal(shape = [self.hidden_size * 2,self.hidden_size * 2],stddev = 0.01,name = 'U'))
         self.W_hm = tf.Variable(tf.truncated_normal(shape = [self.hidden_size * 2,self.hidden_size * 2],stddev = 0.01,name = 'W_hm'))
@@ -146,7 +124,15 @@ class QA_RNN_extend(object):
         self.a_pos_rnn = self.lstm_model(fw_cell,bw_cell,self.a_embedding,self.a_len)
         self.a_neg_rnn = self.lstm_model(fw_cell,bw_cell,self.a_neg_embedding,self.a_neg_len)
         self.q_pos_rnn,self.a_pos_rnn = self.rnn_attention(self.q_rnn,self.a_pos_rnn,self.q_mask,self.a_mask)
+
         self.q_neg_rnn,self.a_neg_rnn = self.rnn_attention(self.q_rnn,self.a_neg_rnn,self.q_mask,self.a_neg_mask)
+
+         # Add dropout
+        with tf.name_scope("dropout"):
+            self.q_pos_rnn = tf.nn.dropout(self.q_pos_rnn, 0.5)
+            self.a_pos_rnn = tf.nn.dropout(self.a_pos_rnn, 0.5)
+            self.q_neg_rnn = tf.nn.dropout(self.q_neg_rnn, 0.5)
+            self.a_neg_rnn = tf.nn.dropout(self.a_neg_rnn, 0.5)
 
     def traditional_attention(self,input_left,input_right,q_mask,a_mask):
         input_left_mask = tf.multiply(input_left, tf.expand_dims(tf.cast(q_mask,tf.float32),2))
@@ -162,17 +148,14 @@ class QA_RNN_extend(object):
         return Q,a_attention
 
 
-    def position_attention(self,input_left,input_right,input_position,a_len,q_mask,a_mask):
+    def position_attention(self,input_left,input_right,input_position,q_mask,a_mask):
         input_left_mask = tf.multiply(input_left, tf.expand_dims(tf.cast(q_mask,tf.float32),2))
         Q = tf.reduce_mean(input_left_mask,1)
         a_shape = tf.shape(input_right)
-        A = tf.reshape(input_right,[-1,self.hidden_size * 2])
         a_position = tf.reshape(input_position,[-1,self.position_embedding_dim])
     
-        m_t = tf.nn.tanh(tf.reshape(tf.matmul(A,self.W_hm),[-1,a_shape[1],self.hidden_size * 2]) + \
-            tf.reshape(tf.matmul(a_position,self.em_hide),[-1,a_len,self.hidden_size * 2]) + \
-            tf.expand_dims(tf.matmul(Q,self.W_qm),1))
-        f_attention = tf.exp(tf.reshape(tf.matmul(tf.reshape(m_t,[-1,self.hidden_size * 2]),self.W_ms),[-1,a_len,1]))
+        m_t = tf.nn.tanh(tf.reshape(tf.matmul(a_position,self.em_hide),[-1,a_shape[1],self.hidden_size * 2]) + tf.expand_dims(tf.matmul(Q,self.W_qm),1))
+        f_attention = tf.exp(tf.reshape(tf.matmul(tf.reshape(m_t,[-1,self.hidden_size * 2]),self.W_ms),[-1,a_shape[1],1]))
         self.f_attention_mask = tf.multiply(f_attention,tf.expand_dims(tf.cast(a_mask,tf.float32),2))
         self.f_attention_norm = tf.divide(self.f_attention_mask,tf.reduce_sum(self.f_attention_mask,1,keep_dims = True))
         self.see = self.f_attention_norm
@@ -183,25 +166,25 @@ class QA_RNN_extend(object):
         input_left_mask = tf.multiply(input_left, tf.expand_dims(tf.cast(q_mask,tf.float32),2))
         self.Q = tf.reduce_mean(input_left_mask,1)
         a_shape = tf.shape(input_right)
-        self.M_qi_dropout = tf.nn.dropout(self.M_qi, self.dropout_keep_prob_holder)
+        self.M_qi_dropout = tf.nn.dropout(self.M_qi, 0.7)
         QM = tf.expand_dims(tf.matmul(self.Q,self.M_qi_dropout),1)
 
         a_value = tf.transpose(tf.matmul(QM,tf.transpose(input_right,[0,2,1])),[0,2,1])
         self.a_t = tf.nn.sigmoid(a_value)
         self.a_t_mask = tf.multiply(self.a_t, tf.expand_dims(tf.cast(  a_mask,tf.float32),2),name = "a_t_mask")
         # self.a_t_norm = tf.divide(self.a_t_mask,tf.reduce_sum(self.a_t_mask,1,keep_dims=True))
-        # print((self.a_t_mask))
+        # print(self.a_t_mask)
 
         self.a_attention = tf.multiply(self.a_t_mask, input_right)
         # self.a_attention = input_right
-        # print(("a_att",self.a_attention))
+        # print("a_att",self.a_attention)
         return self.Q,self.a_attention
 
 
 
     
     def rnn_attention(self,q,a,q_mask,a_mask):
-        print((self.attention))
+        print(self.attention)
         if self.attention == 'simple':
             q = tf.reduce_mean(q,axis = 1,keep_dims = True)
             alpha = tf.nn.softmax(tf.matmul(a,tf.transpose(q,perm = [0,2,1])),1)
@@ -227,7 +210,7 @@ class QA_RNN_extend(object):
 
     def lstm_model(self,fw_cell,bw_cell,embedding_sentence,seq_len):
         outputs,_ = tf.nn.bidirectional_dynamic_rnn(fw_cell,bw_cell,embedding_sentence,sequence_length = seq_len,dtype = tf.float32)
-        print("outputs:===>",outputs) #outputs:(<tf.Tensor 'bidirectional_rnn/fw/fw/transpose:0' shape=(?, 5, 100) dtype=float32>, <tf.Tensor 'ReverseV2:0' shape=(?, 5, 100) dtype=float32>)))
+        print("outputs:===>",outputs) #outputs:(<tf.Tensor 'bidirectional_rnn/fw/fw/transpose:0' shape=(?, 5, 100) dtype=float32>, <tf.Tensor 'ReverseV2:0' shape=(?, 5, 100) dtype=float32>))
         #3. concat output
         output_rnn = tf.concat(outputs,axis = 2) #[batch_size,sequence_length,hidden_size*2]
         # self.output_rnn_last = tf.reduce_mean(output_rnn,axis = 1) #[batch_size,hidden_size*2] #output_rnn_last=output_rnn[:,-1,:] ##[batch_size,hidden_size*2] #TODO
@@ -239,9 +222,9 @@ class QA_RNN_extend(object):
         with tf.variable_scope('backward' + name):
             lstm_bw_cell = tf.contrib.rnn.BasicLSTMCell(self.hidden_size)
 
-        if self.dropout_keep_prob_holder is not None:
-            self.lstm_fw_cell = rnn.DropoutWrapper(lstm_fw_cell,output_keep_prob = self.dropout_keep_prob_holder)
-            self.lstm_bw_cell = rnn.DropoutWrapper(lstm_bw_cell,output_keep_prob = self.dropout_keep_prob_holder)
+        if self.dropout_keep_prob is not None:
+            self.lstm_fw_cell = rnn.DropoutWrapper(lstm_fw_cell,output_keep_prob = self.dropout_keep_prob)
+            self.lstm_bw_cell = rnn.DropoutWrapper(lstm_bw_cell,output_keep_prob = self.dropout_keep_prob)
         return self.lstm_fw_cell,self.lstm_bw_cell
     def gru_cell(self,name):
         with tf.variable_scope('forward' + name):
@@ -249,9 +232,9 @@ class QA_RNN_extend(object):
         with tf.variable_scope('backward' + name):
             gru_bw_cell = tf.contrib.rnn.GRUCell(self.hidden_size)
 
-        if self.dropout_keep_prob_holder is not None:
-            self.lstm_fw_cell = rnn.DropoutWrapper(gru_fw_cell,output_keep_prob = self.dropout_keep_prob_holder)
-            self.lstm_bw_cell = rnn.DropoutWrapper(gru_bw_cell,output_keep_prob = self.dropout_keep_prob_holder)
+        if self.dropout_keep_prob is not None:
+            self.lstm_fw_cell = rnn.DropoutWrapper(gru_fw_cell,output_keep_prob = self.dropout_keep_prob)
+            self.lstm_bw_cell = rnn.DropoutWrapper(gru_bw_cell,output_keep_prob = self.dropout_keep_prob)
         return self.lstm_fw_cell,self.lstm_bw_cell
     def create_loss(self):
         
@@ -286,16 +269,13 @@ class QA_RNN_extend(object):
                     name="pool")
         return pooled
     def getCosine(self,q,a):
-        pooled_flat_1 = tf.nn.dropout(q, self.dropout_keep_prob_holder)
-        pooled_flat_2 = tf.nn.dropout(a, self.dropout_keep_prob_holder)
-        q_normalize = tf.nn.l2_normalize(q,dim = 1)
-        a_normalize = tf.nn.l2_normalize(a,dim = 1)
-
-        score = tf.reduce_sum(tf.multiply(q_normalize,a_normalize),1)
-        # pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
-        # pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
-        # pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
-        # score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name="scores") 
+        pooled_flat_1 = tf.nn.dropout(q, self.dropout_keep_prob)
+        pooled_flat_2 = tf.nn.dropout(a, self.dropout_keep_prob)
+        
+        pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
+        pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
+        pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
+        score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name="scores") 
         return score
     
     def attentive_pooling(self,input_left,input_right):
@@ -307,11 +287,11 @@ class QA_RNN_extend(object):
         Q = input_left
         A = input_right
         first = tf.matmul(tf.reshape(Q,[-1,self.hidden_size * 2]),self.U)
-        print( tf.reshape(Q,[-1,len(self.filter_sizes) * self.num_filters]))
-        print( self.U)
+        print tf.reshape(Q,[-1,len(self.filter_sizes) * self.num_filters])
+        print self.U
         second_step = tf.reshape(first,[-1,self.max_input_left,self.hidden_size * 2])
         result = tf.matmul(second_step,tf.transpose(A,perm = [0,2,1]))
-        # print( 'result',result)
+        # print 'result',result
         G = tf.tanh(result)
         # G = result
         # column-wise pooling ,row-wise pooling
@@ -341,7 +321,7 @@ class QA_RNN_extend(object):
         cnn_reshaped = tf.concat(cnn_outputs,3)
         return cnn_reshaped
     def narrow_convolution_pooling(self):
-        print( 'narrow pooling')
+        print 'narrow pooling'
         self.kernels = []
         for i,filter_size in enumerate(self.filter_sizes):
             with tf.name_scope('conv-max-pool-%s' % filter_size):
@@ -374,35 +354,7 @@ class QA_RNN_extend(object):
         self.create_loss()
         self.create_op()
         self.merged = tf.summary.merge_all()
-    def train(self,sess,data):
-        feed_dict = {
-                self.question:data[0],
-                self.answer:data[1],
-                self.answer_negative:data[2],
-                self.pos_position:data[3],
-                self.neg_position:data[4],
-                # self.q_mask:data[3],
-                # self.a_mask:data[4],
-                # self.a_neg_mask:data[5],
-                self.dropout_keep_prob_holder:self.dropout_keep_prob
-            }
 
-        _, summary, step, loss, accuracy,score12, score13, see = sess.run(
-                    [self.train_op, self.merged,self.global_step,self.loss, self.accuracy,self.score12,self.score13, self.see],
-                    feed_dict)
-        return _, summary, step, loss, accuracy,score12, score13, see
-    def predict(self,sess,data):
-        feed_dict = {
-                self.question:data[0],
-                self.answer:data[1],
-                self.pos_position:data[2],
-                # self.q_mask:data[2],
-                # self.a_mask:data[3],
-                self.dropout_keep_prob_holder:1.0
-            }     
-        # print(data[2])       
-        score = sess.run( self.score12, feed_dict)       
-        return score
     
 if __name__ == '__main__':
     
@@ -438,7 +390,6 @@ if __name__ == '__main__':
             # cnn.answer_negative:input_x_3,
             cnn.q_mask:q_mask,
             cnn.a_mask:a_mask,
-            cnn.dropout_keep_prob_holder:cnn.dropout_keep
             # cnn.a_neg_mask:a_neg_mask
             # cnn.q_pos_overlap:q_pos_embedding,
             # cnn.q_neg_overlap:q_neg_embedding,
@@ -449,7 +400,7 @@ if __name__ == '__main__':
             # cnn.a_neg_position:a_neg_position
         }
         question,answer,score = sess.run([cnn.question,cnn.answer,cnn.score12],feed_dict)
-        print( question.shape,answer.shape)
-        print( score)
+        print question.shape,answer.shape
+        print score
 
 

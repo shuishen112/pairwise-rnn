@@ -17,10 +17,10 @@ timeArray = time.localtime(now)
 timeStamp = time.strftime("%Y%m%d%H%M%S", timeArray)
 log_filename = "log/" +time.strftime("%Y%m%d", timeArray)
 
-program = os.path.basename(sys.argv[0])
+program = os.path.basename('program')
 logger = logging.getLogger(program) 
 if not os.path.exists(log_filename):
-    os.path.mkdir(log_filename)
+    os.makedirs(log_filename)
 logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s',datefmt='%a, %d %b %Y %H:%M:%S',filename=log_filename+'/qa.log',filemode='w')
 logging.root.setLevel(level=logging.INFO)
 logger.info("running %s" % ' '.join(sys.argv))
@@ -80,7 +80,7 @@ with tf.Graph().as_default(), tf.device("/gpu:" + str(args.gpu)):
         for data in data_helper.get_mini_batch(train,alphabet,args.batch_size):
             _, summary, step, loss, accuracy,score12, score13, see = model.train(sess,data)
             time_str = datetime.datetime.now().isoformat()
-#            print("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
+            print("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
             logger.info("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
 
         test_datas = data_helper.get_mini_batch_test(test,alphabet,args.batch_size)
