@@ -138,7 +138,7 @@ def get_mini_batch_test(df,alphabet,batch_size):
         mb_a,mb_pos_overlaps = prepare_data(mb_a,mb_pos_overlap)
 
 
-        yield(mb_q,mb_a,mb_pos_overlaps)
+        yield(mb_q,mb_a)
 
 # calculate the overlap_index
 def overlap_index(question,answer,stopwords = []):
@@ -229,7 +229,7 @@ def get_mini_batch(df,alphabet,batch_size,sort_by_len = True,shuffle = False):
 
         # mb_neg_a , mb_a_neg_mask = prepare_data(mb_neg_a)
 
-        yield(mb_q,mb_a,mb_neg_a,mb_pos_overlaps,mb_neg_overlaps)
+        yield(mb_q,mb_a,mb_neg_a)
 def prepare_data(seqs,overlap = None):
     lengths = [len(seq) for seq in seqs]
     n_samples = len(seqs)

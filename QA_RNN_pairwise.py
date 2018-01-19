@@ -272,10 +272,13 @@ class QA_RNN_extend(object):
         pooled_flat_1 = tf.nn.dropout(q, self.dropout_keep_prob)
         pooled_flat_2 = tf.nn.dropout(a, self.dropout_keep_prob)
         
-        pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
-        pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
-        pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
-        score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name="scores") 
+        q = tf.nn.l2_normalize(q,1)
+        a = tf.nn.l2_normalize(a,1)
+        score = tf.reduce_sum(tf.multiply(q,a),1)
+        # pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
+        # pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
+        # pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
+        # score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name="scores") 
         return score
     
     def attentive_pooling(self,input_left,input_right):

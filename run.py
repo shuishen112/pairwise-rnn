@@ -12,7 +12,7 @@ import sys
 import logging
 
 
-now = int(time.time()) 
+now = int(time.time())
 timeArray = time.localtime(now)
 timeStamp = time.strftime("%Y%m%d%H%M%S", timeArray)
 log_filename = "log/" +time.strftime("%Y%m%d", timeArray)
@@ -28,7 +28,7 @@ logger.info("running %s" % ' '.join(sys.argv))
 
 
 
-args = Singleton().get_rnn_flag()
+args = Singleton().get_qcnn_flag()
 args._parse_flags()
 opts=dict()
 logger.info("\nParameters:")
@@ -89,4 +89,4 @@ with tf.Graph().as_default(), tf.device("/gpu:" + str(args.gpu)):
         map_mrr_test = evaluation.evaluationBypandas(test,predicted_test)
 
         logger.info('map_mrr test' +str(map_mrr_test))
-        print('map_mrr test' +str(map_mrr_test))
+        print('epoch '+ str(i) + 'map_mrr test' +str(map_mrr_test))
