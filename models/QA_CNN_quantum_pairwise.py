@@ -1,49 +1,10 @@
 #coding:utf-8
 import tensorflow as tf
 import numpy as np
-from tensorflow.contrib import rnn
 import models.blocks as blocks
 # model_type :apn or qacnn
 class QA_CNN_extend(object):
-#    def __init__(self,max_input_left,max_input_right,batch_size,vocab_size,embedding_size,filter_sizes,num_filters,hidden_size,
-#        dropout_keep_prob = 1,learning_rate = 0.001,embeddings = None,l2_reg_lambda = 0.0,trainable = True,pooling = 'attentive',conv = 'narrow'):
-#
-#        """
-#            QA_RNN model for question answering
-#
-#            Args:
-#                self.dropout_keep_prob: dropout rate
-#                self.num_filters : number of filters
-#                self.para : parameter list
-#                self.extend_feature_dim : my extend feature dimension
-#                self.max_input_left : the length of question
-#                self.max_input_right : the length of answer
-#                self.pooling : pooling strategy :max pooling or attentive pooling
-#                
-#        """
-#        self.dropout_keep_prob =  tf.placeholder(tf.float32,name = 'dropout_keep_prob')
-#        self.num_filters = num_filters
-#        self.embeddings = embeddings
-#        self.embedding_size = embedding_size
-#        self.batch_size = batch_size
-#        self.filter_sizes = filter_sizes
-#        self.l2_reg_lambda = l2_reg_lambda
-#        self.para = []
-#
-#        self.max_input_left = max_input_left
-#        self.max_input_right = max_input_right
-#        self.trainable = trainable
-#        self.vocab_size = vocab_size
-#        self.pooling = pooling
-#        self.total_num_filter = len(self.filter_sizes) * self.num_filters
-#
-#        self.conv = conv
-#        self.pooling = 'traditional'
-#        self.learning_rate = learning_rate
-#
-#        self.hidden_size = hidden_size
-#
-#        self.attention_size = 100
+#    
     def __init__(self,opt):
         for key,value in opt.items():
             self.__setattr__(key,value)
@@ -102,15 +63,46 @@ class QA_CNN_extend(object):
         embeddings = [self.q_embedding,self.a_embedding,self.a_neg_embedding]
 
         self.q_cnn,self.a_cnn,self.a_neg_cnn = [self.wide_convolution(tf.expand_dims(embedding,-1)) for embedding in embeddings]
+        self.see = self.q_cnn
         print( self.q_cnn)
+    def sordoni_density_similarity(self,q_conv,a_conv):
+      
+        q = tf.squeeze(q_conv,2)
+        a = tf.squeeze(a_conv,2)
+        # q = tf.nn.softmax(q,2)
+        # a = tf.nn.softmax(a,2)
+        q = tf.reduce_sum(tf.log(q + 1),1)
+        
+        a = tf.reduce_sum(tf.log(a + 1),1)
+        score = self.getCosine(q,a)
+        # q = tf.nn.l2_normalize(q,2)
+        # a = tf.nn.l2_normalize(a,2)
+        
+
+        # self.q = tf.reduce_sum(tf.square(q),2)
+    
+        # self.sim = tf.matmul(q,tf.transpose(a,perm = [0,2,1]))
+        # # score = tf.contrib.layers.linear(self.sim, 1)
+        # # # # feature = tf.contrib.layers.flatten(self.sim)
+        # # score = tf.contrib.layers.fully_connected(tf.contrib.layers.flatten(self.sim),num_outputs = 1,activation_fn = tf.sigmoid)
+        # score = tf.reduce_mean(self.sim,[1,2])
+        self.see = q
+        return score
         #convolution
     def pooling_graph(self):
+        print(self.pooling)
         if self.pooling == 'mean':
 
             self.q_pos_cnn = self.mean_pooling(self.q_cnn,self.q_mask)
             self.q_neg_cnn = self.mean_pooling(self.q_cnn,self.q_mask)
             self.a_pos_cnn = self.mean_pooling(self.a_cnn,self.a_mask)
             self.a_neg_cnn = self.mean_pooling(self.a_neg_cnn,self.a_neg_mask)
+        elif self.pooling == 'product':
+
+            self.q_pos_cnn = self.product_pooling(self.q_cnn,self.q_mask)
+            self.q_neg_cnn = self.product_pooling(self.q_cnn,self.q_mask)
+            self.a_pos_cnn = self.product_pooling(self.a_cnn,self.a_mask)
+            self.a_neg_cnn = self.product_pooling(self.a_neg_cnn,self.a_neg_mask)
         elif self.pooling == 'attentive':
             self.q_pos_cnn,self.a_pos_cnn = self.attentive_pooling(self.q_cnn,self.a_cnn,self.q_mask,self.a_mask)
             self.q_neg_cnn,self.a_neg_cnn = self.attentive_pooling(self.q_cnn,self.a_neg_cnn,self.q_mask,self.a_neg_mask)
@@ -136,11 +128,11 @@ class QA_CNN_extend(object):
     def mean_pooling(self,conv,mask):
    
         conv = tf.squeeze(conv,2)
-        print( tf.expand_dims(tf.cast(mask,tf.float32),-1))
-        # conv_mask = tf.multiply(conv,tf.expand_dims(tf.cast(mask,tf.float32),-1))
-        # self.see = conv_mask
-        # print( conv_mask)
-        return tf.reduce_mean(conv,axis = 1);
+   
+        return tf.reduce_mean(conv,axis = 1)
+    def product_pooling(self,conv,mask):
+        conv = tf.squeeze(conv,2)
+        return tf.reduce_sum(tf.log(conv + 1),1)
     def attentive_pooling(self,input_left,input_right,q_mask,a_mask):
 
         Q = tf.squeeze(input_left,axis = 2)
