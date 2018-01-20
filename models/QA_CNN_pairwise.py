@@ -81,6 +81,8 @@ class QA_CNN_extend(object):
         self.para.append(self.embedding_W)
 
         self.q_embedding =  tf.nn.embedding_lookup(self.embedding_W,self.question)
+
+
         self.a_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer)
         self.a_neg_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer_negative)
         #real length
@@ -99,10 +101,11 @@ class QA_CNN_extend(object):
                 self.kernels.append((W,b))
                 self.para.append(W)
                 self.para.append(b)
+       
         embeddings = [self.q_embedding,self.a_embedding,self.a_neg_embedding]
 
         self.q_cnn,self.a_cnn,self.a_neg_cnn = [self.wide_convolution(tf.expand_dims(embedding,-1)) for embedding in embeddings]
-        print( self.q_cnn)
+
         #convolution
     def pooling_graph(self):
         if self.pooling == 'mean':
@@ -119,6 +122,7 @@ class QA_CNN_extend(object):
             self.q_neg_cnn,self.a_neg_cnn = self.position_attention(self.q_cnn,self.a_neg_cnn,self.q_mask,self.a_neg_mask)
         elif self.pooling == 'traditional':
             print( self.pooling)
+            print(self.q_cnn)
             self.q_pos_cnn,self.a_pos_cnn = self.traditional_attention(self.q_cnn,self.a_cnn,self.q_mask,self.a_mask)
             self.q_neg_cnn,self.a_neg_cnn = self.traditional_attention(self.q_cnn,self.a_neg_cnn,self.q_mask,self.a_neg_mask)
 
@@ -299,6 +303,7 @@ class QA_CNN_extend(object):
         self.create_loss()
         self.create_op()
         self.merged = tf.summary.merge_all()
+
     def train(self,sess,data):
         feed_dict = {
                 self.question:data[0],
