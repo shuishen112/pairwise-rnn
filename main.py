@@ -4,8 +4,7 @@ import time
 import datetime
 import os
 import tensorflow as tf
-from QA_RNN_pairwise import QA_RNN_extend
-from QA_CNN_pairwise import QA_CNN_extend
+
 import numpy as np
 import evaluation
 now = int(time.time()) 
@@ -35,7 +34,11 @@ def main(args):
     print('the number of words',len(alphabet))
 
     print('get embedding')
-    embedding = data_helper.get_embedding(alphabet)
+    if args.data=="quora":
+        embedding = data_helper.get_embedding(alphabet,language="cn")
+    else:
+        embedding = data_helper.get_embedding(alphabet)
+    
     
 
     with tf.Graph().as_default(), tf.device("/gpu:" + str(args.gpu)):
@@ -96,7 +99,11 @@ def main(args):
                 scores.extend(score)
       
             return np.array(scores[:len(test)])
+        
+                
+        
 
+        
         for i in range(args.num_epoches):
             datas = data_helper.get_mini_batch(train,alphabet,args.batch_size)
             train_step(model,sess,datas)
@@ -108,6 +115,7 @@ def main(args):
             map_mrr_test = evaluation.evaluationBypandas(test,predicted_test)
 
             print('map_mrr test',map_mrr_test)
+
 
 
 

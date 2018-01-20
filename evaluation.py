@@ -6,6 +6,14 @@ import sklearn
 import numpy as np
 qa_path="data/nlpcc-iccpol-2016.dbqa.testing-data"
 
+
+def percisionAT1_metric(group):
+	group = sklearn.utils.shuffle(group,random_state =132)
+	candidates=group.sort_values(by='score',ascending=False).reset_index()
+	rr=candidates[candidates["flag"]==1].index.min()+1
+	if rr!=rr:
+		return 0
+	return 1.0 if rr==1 else 0.0
 def mrr_metric(group):
 	group = sklearn.utils.shuffle(group,random_state =132)
 	candidates=group.sort_values(by='score',ascending=False).reset_index()
@@ -60,10 +68,11 @@ def evaluationbyFile(modelfile,resultfile="result.text",groundtruth=qa_path):
 	print( modelfile[19:-6]+":") # )
 	subprocess.call(cmd, shell=True)
 def evaluationBypandas(df,predicted):
-	df["score"]=predicted
-	mrr= df.groupby("question").apply(mrr_metric).mean()
-	map= df.groupby("question").apply(map_metric).mean()
-	return map,mrr
+    df["score"]=predicted
+    mrr= df.groupby("question").apply(mrr_metric).mean()
+    map= df.groupby("question").apply(map_metric).mean()
+    percsisionAT1= df.groupby("question").apply(percisionAT1_metric).mean()
+    return map,mrr,percsisionAT1
 def precision_per(group):
 	group = sklearn.utils.shuffle(group,random_state =132)
 	candidates=group.sort_values(by='score',ascending=False).reset_index()

@@ -1,10 +1,12 @@
+# -*- coding: utf-8 -*-
+
 from tensorflow import flags
 import tensorflow as tf
 from config import Singleton
 import data_helper
 
-import datetime,os
-
+import datetime
+import os
 import models
 import numpy as np
 import evaluation
@@ -63,14 +65,17 @@ with tf.Graph().as_default():
     model=models.setup(opts)
     model.build_graph()    
     saver = tf.train.Saver()
+    sess.run(tf.global_variables_initializer())  # fun first than print or save
+    
     
     ckpt = tf.train.get_checkpoint_state("checkpoint")    
     if ckpt and ckpt.model_checkpoint_path:    
         # Restores from checkpoint    
         saver.restore(sess, ckpt.model_checkpoint_path)
+    print(sess.run(model.position_embedding)[0])
     if os.path.exists("model") :                        
         import shutil
-        shutil.rmtree("model")        
+        shutil.rmtree("model")
     builder = tf.saved_model.builder.SavedModelBuilder("./model")
     builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING])
     builder.save(True)
@@ -79,7 +84,7 @@ with tf.Graph().as_default():
     saver = tf.train.Saver(variables_to_restore)  
     for name in variables_to_restore:    
         print(name) 
-    sess.run(tf.global_variables_initializer())
+   
     @log_time_delta
     def predict(model,sess,batch,test):
         scores = []
@@ -88,47 +93,25 @@ with tf.Graph().as_default():
             scores.extend(score)  
         return np.array(scores[:len(test)])
     
-    best_p1=0
     
+    text = "怎么 提取 公积金 ？"
+  
+    splited_text=data_helper.encode_to_split(text,alphabet)
+
+    mb_q,mb_q_mask = data_helper.prepare_data([splited_text])
+    mb_a,mb_a_mask = data_helper.prepare_data([splited_text])
     
+    data = (mb_q,mb_a,mb_q_mask,mb_a_mask)
+    score = model.predict(sess,data)
+    print(score)
+    feed_dict = {
+                model.question:data[0],
+                model.answer:data[1],
+                model.q_mask:data[2],
+                model.a_mask:data[3],
+                model.dropout_keep_prob_holder:1.0
+            }   
+    sess.run(model.position_embedding,feed_dict=feed_dict)[0]
 
     
-    for i in range(args.num_epoches):  
-        
-#        for data in train_data_loader(train,alphabet,args.batch_size,model=model,sess=sess):
-        for data in data_helper.getBatch48008(train,alphabet,args.batch_size):
-            _, summary, step, loss, accuracy,score12, score13, see = model.train(sess,data)
-            time_str = datetime.datetime.now().isoformat()
-#            print("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
-            logger.info("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
-        
- 
-        if i>0 and i % 5 ==0:
-            test_datas = data_helper.get_mini_batch_test(test,alphabet,args.batch_size)
-        
-            predicted_test = predict(model,sess,test_datas,test)
-            map_mrr_test = evaluation.evaluationBypandas(test,predicted_test)
-        
-            logger.info('map_mrr test' +str(map_mrr_test))
-            print('map_mrr test' +str(map_mrr_test))
-            
-            test_datas = data_helper.get_mini_batch_test(dev,alphabet,args.batch_size)
-            predicted_test = predict(model,sess,test_datas,dev)
-            map_mrr_test = evaluation.evaluationBypandas(dev,predicted_test)
-        
-            logger.info('map_mrr dev' +str(map_mrr_test))
-            print('map_mrr dev' +str(map_mrr_test))
-            map,mrr,p1 = map_mrr_test
-            if p1>best_p1:
-                best_p1=p1
-                filename= "checkpoint/"+args.data+"_"+str(p1)+".model"
-                save_path = saver.save(sess, filename)  
-        #            load_path = saver.restore(sess, model_path)
-                
-                import shutil
-                shutil.rmtree("model")
-                builder = tf.saved_model.builder.SavedModelBuilder("./model")
-                builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING])
-                builder.save(True)
-        
-        
+   
