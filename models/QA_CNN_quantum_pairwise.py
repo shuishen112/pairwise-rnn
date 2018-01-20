@@ -1,51 +1,20 @@
 #coding:utf-8
 import tensorflow as tf
 import numpy as np
-from tensorflow.contrib import rnn
-
+import models.blocks as blocks
 # model_type :apn or qacnn
 class QA_CNN_extend(object):
-    def __init__(self,max_input_left,max_input_right,batch_size,vocab_size,embedding_size,filter_sizes,num_filters,hidden_size,
-        dropout_keep_prob = 1,learning_rate = 0.001,embeddings = None,l2_reg_lambda = 0.0,trainable = True,pooling = 'attentive',conv = 'narrow'):
-
-        """
-            QA_RNN model for question answering
-
-            Args:
-                self.dropout_keep_prob: dropout rate
-                self.num_filters : number of filters
-                self.para : parameter list
-                self.extend_feature_dim : my extend feature dimension
-                self.max_input_left : the length of question
-                self.max_input_right : the length of answer
-                self.pooling : pooling strategy :max pooling or attentive pooling
-                
-        """
-        self.dropout_keep_prob = dropout_keep_prob
-        self.num_filters = num_filters
-        self.embeddings = embeddings
-        self.embedding_size = embedding_size
-        self.batch_size = batch_size
-        self.filter_sizes = filter_sizes
-        self.l2_reg_lambda = l2_reg_lambda
-        self.para = []
-
-        self.max_input_left = max_input_left
-        self.max_input_right = max_input_right
-        self.trainable = trainable
-        self.vocab_size = vocab_size
-        self.pooling = pooling
-        self.total_num_filter = len(self.filter_sizes) * self.num_filters
-
-        self.conv = conv
-        self.pooling = 'traditional'
-        self.learning_rate = learning_rate
-
-        self.hidden_size = hidden_size
-
+#    
+    def __init__(self,opt):
+        for key,value in opt.items():
+            self.__setattr__(key,value)
         self.attention_size = 100
+        self.pooling = 'mean'
+        self.total_num_filter = len(self.filter_sizes) * self.num_filters
+        self.para = []
+        self.dropout_keep_prob_holder =  tf.placeholder(tf.float32,name = 'dropout_keep_prob')
     def create_placeholder(self):
-        print('Create placeholders')
+        print(('Create placeholders'))
         # he length of the sentence is varied according to the batch,so the None,None
         self.question = tf.placeholder(tf.int32,[None,None],name = 'input_question')
         self.max_input_left = tf.shape(self.question)[1]
@@ -54,18 +23,18 @@ class QA_CNN_extend(object):
         self.answer = tf.placeholder(tf.int32,[None,None],name = 'input_answer')
         self.max_input_right = tf.shape(self.answer)[1]
         self.answer_negative = tf.placeholder(tf.int32,[None,None],name = 'input_right')
-        self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
-        self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
-        self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
+        # self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
+        # self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
+        # self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
 
     def add_embeddings(self):
-        print 'add embeddings'
+        print( 'add embeddings')
         if self.embeddings is not None:
-            print "load embedding"
+            print( "load embedding")
             W = tf.Variable(np.array(self.embeddings),name = "W" ,dtype="float32",trainable = self.trainable)
             
         else:
-            print "random embedding"
+            print( "random embedding")
             W = tf.Variable(tf.random_uniform([self.vocab_size, self.embedding_size], -1.0, 1.0),name="W",trainable = self.trainable)
         self.embedding_W = W
        
@@ -76,12 +45,12 @@ class QA_CNN_extend(object):
         self.a_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer)
         self.a_neg_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer_negative)
         #real length
-        self.q_len = tf.reduce_sum(tf.cast(self.q_mask,'int32'),1)
-        self.a_len = tf.reduce_sum(tf.cast(self.a_mask,'int32'),1)
-        self.a_neg_len = tf.reduce_sum(tf.cast(self.a_neg_mask,'int32'),1)
+        self.q_len,self.q_mask = blocks.length(self.question)
+        self.a_len,self.a_mask = blocks.length(self.answer)
+        self.a_neg_len,self.a_neg_mask = blocks.length(self.answer_negative)
 
     def convolution(self):
-        print 'convolution:wide_convolution'
+        print( 'convolution:wide_convolution')
         self.kernels = []
         for i,filter_size in enumerate(self.filter_sizes):
             with tf.name_scope('conv-max-pool-%s' % filter_size):
@@ -94,15 +63,46 @@ class QA_CNN_extend(object):
         embeddings = [self.q_embedding,self.a_embedding,self.a_neg_embedding]
 
         self.q_cnn,self.a_cnn,self.a_neg_cnn = [self.wide_convolution(tf.expand_dims(embedding,-1)) for embedding in embeddings]
-        print self.q_cnn
+        self.see = self.q_cnn
+        print( self.q_cnn)
+    def sordoni_density_similarity(self,q_conv,a_conv):
+      
+        q = tf.squeeze(q_conv,2)
+        a = tf.squeeze(a_conv,2)
+        # q = tf.nn.softmax(q,2)
+        # a = tf.nn.softmax(a,2)
+        q = tf.reduce_sum(tf.log(q + 1),1)
+        
+        a = tf.reduce_sum(tf.log(a + 1),1)
+        score = self.getCosine(q,a)
+        # q = tf.nn.l2_normalize(q,2)
+        # a = tf.nn.l2_normalize(a,2)
+        
+
+        # self.q = tf.reduce_sum(tf.square(q),2)
+    
+        # self.sim = tf.matmul(q,tf.transpose(a,perm = [0,2,1]))
+        # # score = tf.contrib.layers.linear(self.sim, 1)
+        # # # # feature = tf.contrib.layers.flatten(self.sim)
+        # # score = tf.contrib.layers.fully_connected(tf.contrib.layers.flatten(self.sim),num_outputs = 1,activation_fn = tf.sigmoid)
+        # score = tf.reduce_mean(self.sim,[1,2])
+        self.see = q
+        return score
         #convolution
     def pooling_graph(self):
+        print(self.pooling)
         if self.pooling == 'mean':
 
             self.q_pos_cnn = self.mean_pooling(self.q_cnn,self.q_mask)
             self.q_neg_cnn = self.mean_pooling(self.q_cnn,self.q_mask)
             self.a_pos_cnn = self.mean_pooling(self.a_cnn,self.a_mask)
             self.a_neg_cnn = self.mean_pooling(self.a_neg_cnn,self.a_neg_mask)
+        elif self.pooling == 'product':
+
+            self.q_pos_cnn = self.product_pooling(self.q_cnn,self.q_mask)
+            self.q_neg_cnn = self.product_pooling(self.q_cnn,self.q_mask)
+            self.a_pos_cnn = self.product_pooling(self.a_cnn,self.a_mask)
+            self.a_neg_cnn = self.product_pooling(self.a_neg_cnn,self.a_neg_mask)
         elif self.pooling == 'attentive':
             self.q_pos_cnn,self.a_pos_cnn = self.attentive_pooling(self.q_cnn,self.a_cnn,self.q_mask,self.a_mask)
             self.q_neg_cnn,self.a_neg_cnn = self.attentive_pooling(self.q_cnn,self.a_neg_cnn,self.q_mask,self.a_neg_mask)
@@ -110,12 +110,12 @@ class QA_CNN_extend(object):
             self.q_pos_cnn,self.a_pos_cnn = self.position_attention(self.q_cnn,self.a_cnn,self.q_mask,self.a_mask)
             self.q_neg_cnn,self.a_neg_cnn = self.position_attention(self.q_cnn,self.a_neg_cnn,self.q_mask,self.a_neg_mask)
         elif self.pooling == 'traditional':
-            print self.pooling
+            print( self.pooling)
             self.q_pos_cnn,self.a_pos_cnn = self.traditional_attention(self.q_cnn,self.a_cnn,self.q_mask,self.a_mask)
             self.q_neg_cnn,self.a_neg_cnn = self.traditional_attention(self.q_cnn,self.a_neg_cnn,self.q_mask,self.a_neg_mask)
 
     def para_initial(self):
-        # print("---------")
+        # print(("---------"))
         # self.W_qp = tf.Variable(tf.truncated_normal(shape = [self.hidden_size * 2,1],stddev = 0.01,name = 'W_qp'))
         self.U = tf.Variable(tf.truncated_normal(shape = [self.total_num_filter,self.total_num_filter],stddev = 0.01,name = 'U'))
         self.W_hm = tf.Variable(tf.truncated_normal(shape = [self.total_num_filter,self.total_num_filter],stddev = 0.01,name = 'W_hm'))
@@ -128,17 +128,17 @@ class QA_CNN_extend(object):
     def mean_pooling(self,conv,mask):
    
         conv = tf.squeeze(conv,2)
-        print tf.expand_dims(tf.cast(mask,tf.float32),-1)
-        conv_mask = tf.multiply(conv,tf.expand_dims(tf.cast(mask,tf.float32),-1))
-        self.see = conv_mask
-        print conv_mask
-        return tf.reduce_mean(conv_mask,axis = 1);
+   
+        return tf.reduce_mean(conv,axis = 1)
+    def product_pooling(self,conv,mask):
+        conv = tf.squeeze(conv,2)
+        return tf.reduce_sum(tf.log(conv + 1),1)
     def attentive_pooling(self,input_left,input_right,q_mask,a_mask):
 
         Q = tf.squeeze(input_left,axis = 2)
         A = tf.squeeze(input_right,axis = 2)
-        print Q
-        print A
+        print( Q)
+        print( A)
         # Q = tf.reshape(input_left,[-1,self.max_input_left,len(self.filter_sizes) * self.num_filters],name = 'Q')
         # A = tf.reshape(input_right,[-1,self.max_input_right,len(self.filter_sizes) * self.num_filters],name = 'A')
         # G = tf.tanh(tf.matmul(tf.matmul(Q,self.U),\
@@ -147,9 +147,9 @@ class QA_CNN_extend(object):
         first = tf.matmul(tf.reshape(Q,[-1,len(self.filter_sizes) * self.num_filters]),self.U)
         second_step = tf.reshape(first,[-1,self.max_input_left,len(self.filter_sizes) * self.num_filters])
         result = tf.matmul(second_step,tf.transpose(A,perm = [0,2,1]))
-        print second_step
-        print tf.transpose(A,perm = [0,2,1])
-        # print 'result',result
+        print( second_step)
+        print( tf.transpose(A,perm = [0,2,1]))
+        # print( 'result',result)
         G = tf.tanh(result)
         
         # G = result
@@ -248,8 +248,8 @@ class QA_CNN_extend(object):
                     name="pool")
         return pooled
     def getCosine(self,q,a):
-        pooled_flat_1 = tf.nn.dropout(q, self.dropout_keep_prob)
-        pooled_flat_2 = tf.nn.dropout(a, self.dropout_keep_prob)
+        pooled_flat_1 = tf.nn.dropout(q, self.dropout_keep_prob_holder)
+        pooled_flat_2 = tf.nn.dropout(a, self.dropout_keep_prob_holder)
         
         pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
         pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
@@ -291,6 +291,31 @@ class QA_CNN_extend(object):
         self.create_loss()
         self.create_op()
         self.merged = tf.summary.merge_all()
+    def train(self,sess,data):
+        feed_dict = {
+                self.question:data[0],
+                self.answer:data[1],
+                self.answer_negative:data[2],
+                # self.q_mask:data[3],
+                # self.a_mask:data[4],
+                # self.a_neg_mask:data[5],
+                self.dropout_keep_prob_holder:self.dropout_keep_prob
+            }
+
+        _, summary, step, loss, accuracy,score12, score13, see = sess.run(
+                    [self.train_op, self.merged,self.global_step,self.loss, self.accuracy,self.score12,self.score13, self.see],
+                    feed_dict)
+        return _, summary, step, loss, accuracy,score12, score13, see
+    def predict(self,sess,data):
+        feed_dict = {
+                self.question:data[0],
+                self.answer:data[1],
+                # self.q_mask:data[2],
+                # self.a_mask:data[3],
+                self.dropout_keep_prob_holder:1.0
+            }            
+        score = sess.run( self.score12, feed_dict)       
+        return score
 
     
 if __name__ == '__main__':
@@ -328,6 +353,7 @@ if __name__ == '__main__':
             # cnn.answer_negative:input_x_3,
             cnn.q_mask:q_mask,
             cnn.a_mask:a_mask,
+            cnn.dropout_keep_prob_holder:cnn.dropout_keep
             # cnn.a_neg_mask:a_neg_mask
             # cnn.q_pos_overlap:q_pos_embedding,
             # cnn.q_neg_overlap:q_neg_embedding,
@@ -338,7 +364,7 @@ if __name__ == '__main__':
             # cnn.a_neg_position:a_neg_position
         }
         question,answer,score = sess.run([cnn.question,cnn.answer,cnn.score12],feed_dict)
-        print question.shape,answer.shape
-        print score
+        print( question.shape,answer.shape)
+        print( score)
 
 

@@ -2,7 +2,10 @@
 import tensorflow as tf
 import numpy as np
 from tensorflow.contrib import rnn
+
 from data_helper import log_time_delta
+
+import models.blocks as blocks
 # model_type :apn or qacnn
 class QA_RNN_extend(object):
 #    def __init__(self,max_input_left,max_input_right,batch_size,vocab_size,embedding_size,filter_sizes,num_filters,hidden_size,
@@ -65,13 +68,18 @@ class QA_RNN_extend(object):
         self.answer = tf.placeholder(tf.int32,[None,None],name = 'input_answer')
         self.max_input_right = tf.shape(self.answer)[1]
         self.answer_negative = tf.placeholder(tf.int32,[None,None],name = 'input_right')
-        self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
-        self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
-        self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
-        #real length
-        self.q_len = tf.reduce_sum(tf.cast(self.q_mask,'int32'),1)
-        self.a_len = tf.reduce_sum(tf.cast(self.a_mask,'int32'),1)
-        self.a_neg_len = tf.reduce_sum(tf.cast(self.a_neg_mask,'int32'),1)
+        self.pos_position = tf.placeholder(tf.int32,[None,None],name = 'pos_position')
+        self.neg_position = tf.placeholder(tf.int32,[None,None],name = 'neg_position')
+        self.q_len,self.q_mask = blocks.length(self.question)
+        self.a_len,self.a_mask = blocks.length(self.answer)
+        self.a_neg_len,self.a_neg_mask = blocks.length(self.answer_negative)
+        # self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
+        # self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
+        # self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
+        # #real length
+        # self.q_len = tf.reduce_sum(tf.cast(self.q_mask,'int32'),1)
+        # self.a_len = tf.reduce_sum(tf.cast(self.a_mask,'int32'),1)
+        # self.a_neg_len = tf.reduce_sum(tf.cast(self.a_neg_mask,'int32'),1)
     def create_position(self):
         self.a_max_len = tf.shape(self.answer)[1]
         self.a_neg_max_len = tf.shape(self.answer_negative)[1]
@@ -96,13 +104,15 @@ class QA_RNN_extend(object):
         self.a_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer,name="a_embedding")
         self.a_neg_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer_negative,name="a_neg_embedding")
         
+
         self.a_p = tf.nn.embedding_lookup(self.position_embedding ,self.a_position, name="a_position_embedding")
         self.a_neg_p = tf.nn.embedding_lookup(self.position_embedding,self.a_neg_position,name="a_neg_position_embedding")
+
     def rnn_model_sentence(self):
         fw_cell,bw_cell = self.lstm_cell('rnn')
         self.para_initial()
         if self.attention == 'iarnn_word':
-            print( self.attention)
+            print(self.attention)
             self.rnn_att_inner(fw_cell,bw_cell)
         elif self.attention == 'position_attention':
             self.rnn_position_attention(fw_cell,bw_cell)
@@ -285,11 +295,22 @@ class QA_RNN_extend(object):
     def getCosine(self,q,a,name="scores"):
         pooled_flat_1 = tf.nn.dropout(q, self.dropout_keep_prob_holder)
         pooled_flat_2 = tf.nn.dropout(a, self.dropout_keep_prob_holder)
-        
-        pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
-        pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
-        pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
-        score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name=name) 
+#<<<<<<< HEAD
+#        
+#        pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
+#        pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
+#        pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
+#        score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name=name) 
+#=======
+        q_normalize = tf.nn.l2_normalize(q,dim = 1)
+        a_normalize = tf.nn.l2_normalize(a,dim = 1)
+
+        score = tf.reduce_sum(tf.multiply(q_normalize,a_normalize),1)
+        # pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
+        # pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
+        # pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
+        # score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name="scores") 
+
         return score
     
     def attentive_pooling(self,input_left,input_right):
@@ -375,9 +396,11 @@ class QA_RNN_extend(object):
                 self.question:data[0],
                 self.answer:data[1],
                 self.answer_negative:data[2],
-                self.q_mask:data[3],
-                self.a_mask:data[4],
-                self.a_neg_mask:data[5],
+                self.pos_position:data[3],
+                self.neg_position:data[4],
+                # self.q_mask:data[3],
+                # self.a_mask:data[4],
+                # self.a_neg_mask:data[5],
                 self.dropout_keep_prob_holder:self.dropout_keep_prob
             }
 
@@ -389,10 +412,12 @@ class QA_RNN_extend(object):
         feed_dict = {
                 self.question:data[0],
                 self.answer:data[1],
-                self.q_mask:data[2],
-                self.a_mask:data[3],
+                self.pos_position:data[2],
+                # self.q_mask:data[2],
+                # self.a_mask:data[3],
                 self.dropout_keep_prob_holder:1.0
-            }            
+            }     
+        # print(data[2])       
         score = sess.run( self.score12, feed_dict)       
         return score
     

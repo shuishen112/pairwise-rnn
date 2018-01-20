@@ -9,14 +9,33 @@ import models
 import numpy as np
 import evaluation
 
+import sys
+import logging
+
+import time
+now = int(time.time())
+timeArray = time.localtime(now)
+timeStamp = time.strftime("%Y%m%d%H%M%S", timeArray)
+log_filename = "log/" +time.strftime("%Y%m%d", timeArray)
+
+program = os.path.basename('program')
+logger = logging.getLogger(program) 
+if not os.path.exists(log_filename):
+    os.makedirs(log_filename)
+logging.basicConfig(format='%(asctime)s: %(levelname)s: %(message)s',datefmt='%a, %d %b %Y %H:%M:%S',filename=log_filename+'/qa.log',filemode='w')
+logging.root.setLevel(level=logging.INFO)
+logger.info("running %s" % ' '.join(sys.argv))
+    
+
+
 from data_helper import log_time_delta,getLogger
 
 logger=getLogger()
     
 
 
-args = Singleton().get_rnn_flag()
-#args = Singleton().get_8008_flag()
+
+args = Singleton().get_qcnn_flag()
 
 args._parse_flags()
 opts=dict()
@@ -64,21 +83,22 @@ with tf.Graph().as_default():
     model.build_graph()    
     saver = tf.train.Saver()
     
-    ckpt = tf.train.get_checkpoint_state("checkpoint")    
-    if ckpt and ckpt.model_checkpoint_path:    
-        # Restores from checkpoint    
-        saver.restore(sess, ckpt.model_checkpoint_path)
-    if os.path.exists("model") :                        
-        import shutil
-        shutil.rmtree("model")        
-    builder = tf.saved_model.builder.SavedModelBuilder("./model")
-    builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING])
-    builder.save(True)
-    variable_averages = tf.train.ExponentialMovingAverage(  model)    
-    variables_to_restore = variable_averages.variables_to_restore()    
-    saver = tf.train.Saver(variables_to_restore)  
-    for name in variables_to_restore:    
-        print(name) 
+#    ckpt = tf.train.get_checkpoint_state("checkpoint")    
+#    if ckpt and ckpt.model_checkpoint_path:    
+#        # Restores from checkpoint    
+#        saver.restore(sess, ckpt.model_checkpoint_path)
+#    if os.path.exists("model") :                        
+#        import shutil
+#        shutil.rmtree("model")        
+#    builder = tf.saved_model.builder.SavedModelBuilder("./model")
+#    builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING])
+#    builder.save(True)
+#    variable_averages = tf.train.ExponentialMovingAverage(  model)    
+#    variables_to_restore = variable_averages.variables_to_restore()    
+#    saver = tf.train.Saver(variables_to_restore)  
+#    for name in variables_to_restore:    
+#        print(name) 
+
     sess.run(tf.global_variables_initializer())
     @log_time_delta
     def predict(model,sess,batch,test):
@@ -95,40 +115,51 @@ with tf.Graph().as_default():
     
     for i in range(args.num_epoches):  
         
-#        for data in train_data_loader(train,alphabet,args.batch_size,model=model,sess=sess):
-        for data in data_helper.getBatch48008(train,alphabet,args.batch_size):
+        for data in train_data_loader(train,alphabet,args.batch_size,model=model,sess=sess):
+#        for data in data_helper.getBatch48008(train,alphabet,args.batch_size):
             _, summary, step, loss, accuracy,score12, score13, see = model.train(sess,data)
             time_str = datetime.datetime.now().isoformat()
-#            print("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
+            print("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
             logger.info("{}: step {}, loss {:g}, acc {:g} ,positive {:g},negative {:g}".format(time_str, step, loss, accuracy,np.mean(score12),np.mean(score13)))
-        
- 
-        if i>0 and i % 5 ==0:
-            test_datas = data_helper.get_mini_batch_test(test,alphabet,args.batch_size)
-        
-            predicted_test = predict(model,sess,test_datas,test)
-            map_mrr_test = evaluation.evaluationBypandas(test,predicted_test)
-        
-            logger.info('map_mrr test' +str(map_mrr_test))
-            print('map_mrr test' +str(map_mrr_test))
-            
-            test_datas = data_helper.get_mini_batch_test(dev,alphabet,args.batch_size)
-            predicted_test = predict(model,sess,test_datas,dev)
-            map_mrr_test = evaluation.evaluationBypandas(dev,predicted_test)
-        
-            logger.info('map_mrr dev' +str(map_mrr_test))
-            print('map_mrr dev' +str(map_mrr_test))
-            map,mrr,p1 = map_mrr_test
-            if p1>best_p1:
-                best_p1=p1
-                filename= "checkpoint/"+args.data+"_"+str(p1)+".model"
-                save_path = saver.save(sess, filename)  
-        #            load_path = saver.restore(sess, model_path)
-                
-                import shutil
-                shutil.rmtree("model")
-                builder = tf.saved_model.builder.SavedModelBuilder("./model")
-                builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING])
-                builder.save(True)
-        
-        
+#<<<<<<< HEAD
+#        
+# 
+#        if i>0 and i % 5 ==0:
+#            test_datas = data_helper.get_mini_batch_test(test,alphabet,args.batch_size)
+#        
+#            predicted_test = predict(model,sess,test_datas,test)
+#            map_mrr_test = evaluation.evaluationBypandas(test,predicted_test)
+#        
+#            logger.info('map_mrr test' +str(map_mrr_test))
+#            print('map_mrr test' +str(map_mrr_test))
+#            
+#            test_datas = data_helper.get_mini_batch_test(dev,alphabet,args.batch_size)
+#            predicted_test = predict(model,sess,test_datas,dev)
+#            map_mrr_test = evaluation.evaluationBypandas(dev,predicted_test)
+#        
+#            logger.info('map_mrr dev' +str(map_mrr_test))
+#            print('map_mrr dev' +str(map_mrr_test))
+#            map,mrr,p1 = map_mrr_test
+#            if p1>best_p1:
+#                best_p1=p1
+#                filename= "checkpoint/"+args.data+"_"+str(p1)+".model"
+#                save_path = saver.save(sess, filename)  
+#        #            load_path = saver.restore(sess, model_path)
+#                
+#                import shutil
+#                shutil.rmtree("model")
+#                builder = tf.saved_model.builder.SavedModelBuilder("./model")
+#                builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING])
+#                builder.save(True)
+#        
+#        
+#=======
+
+        test_datas = data_helper.get_mini_batch_test(test,alphabet,args.batch_size)
+
+        predicted_test = predict(model,sess,test_datas,test)
+        map_mrr_test = evaluation.evaluationBypandas(test,predicted_test)
+
+        logger.info('map_mrr test' +str(map_mrr_test))
+        print('epoch '+ str(i) + 'map_mrr test' +str(map_mrr_test))
+

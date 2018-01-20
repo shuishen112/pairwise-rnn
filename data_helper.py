@@ -6,6 +6,7 @@ import tensorflow as tf
 import string
 from collections import Counter
 import pandas as pd
+
 from tqdm import tqdm
 import random
 from functools import wraps
@@ -22,6 +23,11 @@ def log_time_delta(func):
         return ret
     return _deco
 
+import tqdm
+from nltk.corpus import stopwords
+
+
+OVERLAP = 237
 class Alphabet(dict):
     def __init__(self, start_feature_id = 1):
         self.fid = start_feature_id
@@ -42,7 +48,7 @@ class Alphabet(dict):
 def cut(sentence):
     
     tokens = sentence.lower().split()
-    
+    # tokens = [w for w in tokens if w not in stopwords.words('english')]
     return tokens
 @log_time_delta
 def load(dataset, filter = False):
@@ -147,12 +153,15 @@ def get_embedding(alphabet,dim = 300,language ="en",dataset=""):
 def get_mini_batch_test(df,alphabet,batch_size):
     q = []
     a = []
-
+    pos_overlap = []
     for index,row in df.iterrows():
         question = encode_to_split(row["question"],alphabet)
         answer = encode_to_split(row["answer"],alphabet)
+        overlap_pos = overlap_index(row['question'],row['answer'])
         q.append(question)
         a.append(answer)
+        pos_overlap.append(overlap_pos)
+
     m = 0
     n = len(q)
     idx_list = np.arange(m,n,batch_size)
@@ -162,11 +171,33 @@ def get_mini_batch_test(df,alphabet,batch_size):
     for mini_batch in mini_batches:
         mb_q = [ q[t] for t in mini_batch]
         mb_a = [ a[t] for t in mini_batch]
-
+        mb_pos_overlap = [pos_overlap[t] for t in mini_batch]
         mb_q,mb_q_mask = prepare_data(mb_q)
-        mb_a,mb_a_mask = prepare_data(mb_a)
+        mb_a,mb_pos_overlaps = prepare_data(mb_a,mb_pos_overlap)
 
-        yield(mb_q,mb_a,mb_q_mask,mb_a_mask)
+
+        yield(mb_q,mb_a)
+
+# calculate the overlap_index
+def overlap_index(question,answer,stopwords = []):
+    ans_token = cut(answer)
+    qset = set(cut(question))
+    aset = set(ans_token)
+    a_len = len(ans_token)
+
+    # q_index = np.arange(1,q_len)
+    a_index = np.arange(1,a_len + 1)
+
+    overlap = qset.intersection(aset)
+    # for i,q in enumerate(cut(question)[:q_len]):
+    #     value = 1
+    #     if q in overlap:
+    #         value = 2
+    #     q_index[i] = value
+    for i,a in enumerate(ans_token):
+        if a in overlap:
+            a_index[i] = OVERLAP
+    return a_index
 
 
 
@@ -194,11 +225,15 @@ def getBatch48008(df,alphabet,batch_size,sort_by_len = True,shuffle = False):
     return iteration_batch(q,a,neg_a,batch_size,sort_by_len,shuffle)    
 def iteration_batch(q,a,neg_a,batch_size,sort_by_len = True,shuffle = False):
 
+
     if sort_by_len:
         sorted_index = sorted(range(len(q)), key=lambda x: len(q[x]), reverse=True)
         q = [ q[i] for i in sorted_index]
         a = [a[i] for i in sorted_index]
         neg_a = [ neg_a[i] for i in sorted_index]
+
+        pos_overlap = [pos_overlap[i] for i in sorted_index]
+        neg_overlap = [neg_overlap[i] for i in sorted_index]
 
     #get batch
     m = 0
@@ -216,11 +251,15 @@ def iteration_batch(q,a,neg_a,batch_size,sort_by_len = True,shuffle = False):
         mb_q = [ q[t] for t in mini_batch]
         mb_a = [ a[t] for t in mini_batch]
         mb_neg_a = [ neg_a[t] for t in mini_batch]
-
+        mb_pos_overlap = [pos_overlap[t] for t in mini_batch]
+        mb_neg_overlap = [neg_overlap[t] for t in mini_batch]
         mb_q,mb_q_mask = prepare_data(mb_q)
-        mb_a,mb_a_mask = prepare_data(mb_a)
+        mb_a,mb_pos_overlaps = prepare_data(mb_a,mb_pos_overlap)
+        mb_neg_a,mb_neg_overlaps = prepare_data(mb_neg_a,mb_neg_overlap)
+        # mb_a,mb_a_mask = prepare_data(mb_a,mb_pos_overlap)
 
-        mb_neg_a , mb_a_neg_mask = prepare_data(mb_neg_a)
+        # mb_neg_a , mb_a_neg_mask = prepare_data(mb_neg_a)
+
 
         yield(mb_q,mb_a,mb_neg_a,mb_q_mask,mb_a_mask,mb_a_neg_mask)
 
@@ -266,17 +305,42 @@ def get_mini_batch(df,alphabet,batch_size,sort_by_len = True,shuffle = False,mod
             neg_a.append(seq_neg_a)
     return iteration_batch(q,a,neg_a,batch_size,sort_by_len,shuffle)
     
-def prepare_data(seqs):
+
+def prepare_data(seqs,overlap = None):
+
     lengths = [len(seq) for seq in seqs]
     n_samples = len(seqs)
     max_len = np.max(lengths)
-    x = np.zeros((n_samples, max_len)).astype('int32')
-    x_mask = np.zeros((n_samples, max_len)).astype('float')
-    for idx, seq in enumerate(seqs):
-        x[idx, :lengths[idx]] = seq
-        x_mask[idx, :lengths[idx]] = 1.0
-    # print( x, x_mask)
-    return x, x_mask
+
+    x = np.zeros((n_samples,max_len)).astype('int32')
+    if overlap is not None:
+        overlap_position = np.zeros((n_samples,max_len)).astype('float')
+
+        for idx ,seq in enumerate(seqs):
+            x[idx,:lengths[idx]] = seq
+            overlap_position[idx,:lengths[idx]] = overlap[idx]
+        return x,overlap_position
+    else:
+        x_mask = np.zeros((n_samples, max_len)).astype('float')
+        for idx, seq in enumerate(seqs):
+            x[idx, :lengths[idx]] = seq
+            x_mask[idx, :lengths[idx]] = 1.0
+        # print( x, x_mask)
+        return x, x_mask
+
+# def prepare_data(seqs):
+#     lengths = [len(seq) for seq in seqs]
+#     n_samples = len(seqs)
+#     max_len = np.max(lengths)
+
+#     x = np.zeros((n_samples, max_len)).astype('int32')
+#     x_mask = np.zeros((n_samples, max_len)).astype('float')
+#     for idx, seq in enumerate(seqs):
+#         x[idx, :lengths[idx]] = seq
+#         x_mask[idx, :lengths[idx]] = 1.0
+#     # print( x, x_mask)
+#     return x, x_mask
+    
 
 def getLogger():
     import sys

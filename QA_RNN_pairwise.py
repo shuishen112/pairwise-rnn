@@ -37,7 +37,7 @@ class QA_RNN_extend(object):
         self.pooling = pooling
 
         self.conv = conv
-        self.attention = 'position_attention'
+        self.attention = 'mean'
         self.learning_rate = learning_rate
 
         self.hidden_size = hidden_size
@@ -60,10 +60,7 @@ class QA_RNN_extend(object):
         self.a_len = tf.reduce_sum(tf.cast(self.a_mask,'int32'),1)
         self.a_neg_len = tf.reduce_sum(tf.cast(self.a_neg_mask,'int32'),1)
     def create_position(self):
-        self.a_max_len = tf.shape(self.answer)[1]
-        self.a_neg_max_len = tf.shape(self.answer_negative)[1]
-        self.a_position = tf.tile(tf.reshape(tf.range(self.a_max_len),[1,self.a_max_len]),[self.batch_size,1])
-        self.a_neg_position = tf.tile(tf.reshape(tf.range(self.a_neg_max_len),[1,self.a_neg_max_len]),[self.batch_size,1])
+        self.a_position = tf.tile(tf.reshape(tf.range(self.max_input_right),[1,self.max_input_right]),[self.batch_size,1])
     def add_embeddings(self):
         print 'add embeddings'
         if self.embeddings is not None:
@@ -84,7 +81,6 @@ class QA_RNN_extend(object):
         self.a_neg_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer_negative)
         
         self.a_p = tf.nn.embedding_lookup(self.position_embedding ,self.a_position)
-        self.a_neg_p = tf.nn.embedding_lookup(self.position_embedding,self.a_neg_position)
     def rnn_model_sentence(self):
         fw_cell,bw_cell = self.lstm_cell('rnn')
         self.para_initial()
@@ -103,9 +99,8 @@ class QA_RNN_extend(object):
         self.q_rnn = self.lstm_model(fw_cell,bw_cell,self.q_embedding,self.q_len)
         self.a_pos_rnn = self.lstm_model(fw_cell,bw_cell,self.a_embedding,self.a_len)
         self.a_neg_rnn = self.lstm_model(fw_cell,bw_cell,self.a_neg_embedding,self.a_neg_len)
-       
-        self.q_pos_rnn,self.a_pos_rnn = self.position_attention(self.q_rnn,self.a_pos_rnn,self.a_p,self.a_max_len,self.q_mask,self.a_mask)
-        self.q_neg_rnn,self.a_neg_rnn = self.position_attention(self.q_rnn,self.a_neg_rnn,self.a_neg_p,self.a_neg_max_len,self.q_mask,self.a_neg_mask)
+        self.q_pos_rnn,self.a_pos_rnn = self.position_attention(self.q_rnn,self.a_pos_rnn,self.a_p,self.q_mask,self.a_mask)
+        self.q_neg_rnn,self.a_neg_rnn = self.position_attention(self.q_rnn,self.a_neg_rnn,self.a_p,self.q_mask,self.a_neg_mask)
     def para_initial(self):
         # print("---------")
         self.W_qp = tf.Variable(tf.truncated_normal(shape = [self.hidden_size * 2,1],stddev = 0.01,name = 'W_qp'))
@@ -129,7 +124,15 @@ class QA_RNN_extend(object):
         self.a_pos_rnn = self.lstm_model(fw_cell,bw_cell,self.a_embedding,self.a_len)
         self.a_neg_rnn = self.lstm_model(fw_cell,bw_cell,self.a_neg_embedding,self.a_neg_len)
         self.q_pos_rnn,self.a_pos_rnn = self.rnn_attention(self.q_rnn,self.a_pos_rnn,self.q_mask,self.a_mask)
+
         self.q_neg_rnn,self.a_neg_rnn = self.rnn_attention(self.q_rnn,self.a_neg_rnn,self.q_mask,self.a_neg_mask)
+
+         # Add dropout
+        with tf.name_scope("dropout"):
+            self.q_pos_rnn = tf.nn.dropout(self.q_pos_rnn, 0.5)
+            self.a_pos_rnn = tf.nn.dropout(self.a_pos_rnn, 0.5)
+            self.q_neg_rnn = tf.nn.dropout(self.q_neg_rnn, 0.5)
+            self.a_neg_rnn = tf.nn.dropout(self.a_neg_rnn, 0.5)
 
     def traditional_attention(self,input_left,input_right,q_mask,a_mask):
         input_left_mask = tf.multiply(input_left, tf.expand_dims(tf.cast(q_mask,tf.float32),2))
@@ -145,17 +148,14 @@ class QA_RNN_extend(object):
         return Q,a_attention
 
 
-    def position_attention(self,input_left,input_right,input_position,a_len,q_mask,a_mask):
+    def position_attention(self,input_left,input_right,input_position,q_mask,a_mask):
         input_left_mask = tf.multiply(input_left, tf.expand_dims(tf.cast(q_mask,tf.float32),2))
         Q = tf.reduce_mean(input_left_mask,1)
         a_shape = tf.shape(input_right)
-        A = tf.reshape(input_right,[-1,self.hidden_size * 2])
         a_position = tf.reshape(input_position,[-1,self.position_embedding_dim])
     
-        m_t = tf.nn.tanh(tf.reshape(tf.matmul(A,self.W_hm),[-1,a_shape[1],self.hidden_size * 2]) + \
-            tf.reshape(tf.matmul(a_position,self.em_hide),[-1,a_len,self.hidden_size * 2]) + \
-            tf.expand_dims(tf.matmul(Q,self.W_qm),1))
-        f_attention = tf.exp(tf.reshape(tf.matmul(tf.reshape(m_t,[-1,self.hidden_size * 2]),self.W_ms),[-1,a_len,1]))
+        m_t = tf.nn.tanh(tf.reshape(tf.matmul(a_position,self.em_hide),[-1,a_shape[1],self.hidden_size * 2]) + tf.expand_dims(tf.matmul(Q,self.W_qm),1))
+        f_attention = tf.exp(tf.reshape(tf.matmul(tf.reshape(m_t,[-1,self.hidden_size * 2]),self.W_ms),[-1,a_shape[1],1]))
         self.f_attention_mask = tf.multiply(f_attention,tf.expand_dims(tf.cast(a_mask,tf.float32),2))
         self.f_attention_norm = tf.divide(self.f_attention_mask,tf.reduce_sum(self.f_attention_mask,1,keep_dims = True))
         self.see = self.f_attention_norm
@@ -272,10 +272,13 @@ class QA_RNN_extend(object):
         pooled_flat_1 = tf.nn.dropout(q, self.dropout_keep_prob)
         pooled_flat_2 = tf.nn.dropout(a, self.dropout_keep_prob)
         
-        pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
-        pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
-        pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
-        score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name="scores") 
+        q = tf.nn.l2_normalize(q,1)
+        a = tf.nn.l2_normalize(a,1)
+        score = tf.reduce_sum(tf.multiply(q,a),1)
+        # pooled_len_1 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_1), 1)) 
+        # pooled_len_2 = tf.sqrt(tf.reduce_sum(tf.multiply(pooled_flat_2, pooled_flat_2), 1))
+        # pooled_mul_12 = tf.reduce_sum(tf.multiply(pooled_flat_1, pooled_flat_2), 1) 
+        # score = tf.div(pooled_mul_12, tf.multiply(pooled_len_1, pooled_len_2), name="scores") 
         return score
     
     def attentive_pooling(self,input_left,input_right):

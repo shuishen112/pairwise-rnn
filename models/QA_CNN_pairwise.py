@@ -2,7 +2,7 @@
 import tensorflow as tf
 import numpy as np
 from tensorflow.contrib import rnn
-
+import models.blocks as blocks
 # model_type :apn or qacnn
 class QA_CNN_extend(object):
 #    def __init__(self,max_input_left,max_input_right,batch_size,vocab_size,embedding_size,filter_sizes,num_filters,hidden_size,
@@ -48,7 +48,7 @@ class QA_CNN_extend(object):
         for key,value in opt.items():
             self.__setattr__(key,value)
         self.attention_size = 100
-        self.pooling = 'traditional'
+        self.pooling = 'mean'
         self.total_num_filter = len(self.filter_sizes) * self.num_filters
         self.para = []
         self.dropout_keep_prob_holder =  tf.placeholder(tf.float32,name = 'dropout_keep_prob')
@@ -62,9 +62,9 @@ class QA_CNN_extend(object):
         self.answer = tf.placeholder(tf.int32,[None,None],name = 'input_answer')
         self.max_input_right = tf.shape(self.answer)[1]
         self.answer_negative = tf.placeholder(tf.int32,[None,None],name = 'input_right')
-        self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
-        self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
-        self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
+        # self.q_mask = tf.placeholder(tf.int32,[None,None],name = 'q_mask')
+        # self.a_mask = tf.placeholder(tf.int32,[None,None],name = 'a_mask')
+        # self.a_neg_mask = tf.placeholder(tf.int32,[None,None],name = 'a_neg_mask')
 
     def add_embeddings(self):
         print( 'add embeddings')
@@ -86,9 +86,9 @@ class QA_CNN_extend(object):
         self.a_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer)
         self.a_neg_embedding = tf.nn.embedding_lookup(self.embedding_W,self.answer_negative)
         #real length
-        self.q_len = tf.reduce_sum(tf.cast(self.q_mask,'int32'),1)
-        self.a_len = tf.reduce_sum(tf.cast(self.a_mask,'int32'),1)
-        self.a_neg_len = tf.reduce_sum(tf.cast(self.a_neg_mask,'int32'),1)
+        self.q_len,self.q_mask = blocks.length(self.question)
+        self.a_len,self.a_mask = blocks.length(self.answer)
+        self.a_neg_len,self.a_neg_mask = blocks.length(self.answer_negative)
 
     def convolution(self):
         print( 'convolution:wide_convolution')
@@ -141,10 +141,10 @@ class QA_CNN_extend(object):
    
         conv = tf.squeeze(conv,2)
         print( tf.expand_dims(tf.cast(mask,tf.float32),-1))
-        conv_mask = tf.multiply(conv,tf.expand_dims(tf.cast(mask,tf.float32),-1))
-        self.see = conv_mask
-        print( conv_mask)
-        return tf.reduce_mean(conv_mask,axis = 1);
+        # conv_mask = tf.multiply(conv,tf.expand_dims(tf.cast(mask,tf.float32),-1))
+        # self.see = conv_mask
+        # print( conv_mask)
+        return tf.reduce_mean(conv,axis = 1);
     def attentive_pooling(self,input_left,input_right,q_mask,a_mask):
 
         Q = tf.squeeze(input_left,axis = 2)
@@ -309,9 +309,9 @@ class QA_CNN_extend(object):
                 self.question:data[0],
                 self.answer:data[1],
                 self.answer_negative:data[2],
-                self.q_mask:data[3],
-                self.a_mask:data[4],
-                self.a_neg_mask:data[5],
+                # self.q_mask:data[3],
+                # self.a_mask:data[4],
+                # self.a_neg_mask:data[5],
                 self.dropout_keep_prob_holder:self.dropout_keep_prob
             }
 
@@ -323,8 +323,8 @@ class QA_CNN_extend(object):
         feed_dict = {
                 self.question:data[0],
                 self.answer:data[1],
-                self.q_mask:data[2],
-                self.a_mask:data[3],
+                # self.q_mask:data[2],
+                # self.a_mask:data[3],
                 self.dropout_keep_prob_holder:1.0
             }            
         score = sess.run( self.score12, feed_dict)       
